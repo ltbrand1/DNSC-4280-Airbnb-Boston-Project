@@ -1,0 +1,196 @@
+---
+title: "Project"
+author: "Logan Brand"
+date: "2023-02-16"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r}
+#PACKAGES:
+library(ggplot2)
+library(GGally)
+library(ggthemes)
+library(scales)
+library(forecast)
+library(dplyr)
+library(stats)
+library(caret)
+library(tidyverse)
+library(FNN) # for knn function
+```
+
+```{r}
+#Load the data
+data <- read.csv("Sales.csv")
+#CLEANING
+
+#Date:
+#date column (chr) to date format
+data$Date <- as.Date(data$Date, format = "%m/%d/%Y")
+#data
+
+#Unit Price (2 decimal places):
+data$Unit.Price <- round(data$Unit.Price, 2)
+
+#data$Revenue <- (data$Revenue - data$Cost)
+# DROP Column 1
+data <- select(data,-c("Column1"))
+
+#How many missing values?
+sum(is.na(data))
+
+# Rows with missing values
+rows_with_na <- which(apply(data, 1, function(row) any(is.na(row))))
+#print(rows_with_na)
+
+# Remove rows with missing values
+data <- na.omit(data)
+
+#Pre-processing
+data2 <- select(data, c(4:7,9:11,15))
+data.clustering <- data2
+
+```
+
+
+
+```{r}
+#unique(data$Sub.Category)
+{
+data.clustering$Customer.Gender <- as.integer(factor(data$Customer.Gender, levels = c("M","F")))
+data.clustering$Sub.Category <-as.integer(factor(data$Sub.Category, levels = c("Road Bikes","Helmets","Mountain Bikes","Bottles and Cages","Touring Bikes","Gloves","Vests","Caps","Tires and Tubes","Cleaners","Jerseys","Fenders","Bike Stands","Hydration Packs","Socks","Bike Racks","Shorts")))
+data.clustering$Product.Category <-as.integer(factor(data$Product.Category, levels = c("Bikes","Accessories","Clothing")))
+data.clustering$Country <-as.integer(factor(data$Country, levels = c("France","United Kingdom","Germany","United States")))
+data.clustering$Month <-as.integer(factor(data$Month, levels = c("January","February","March","April","May","June","July","August","September","October","November","December")))
+}
+
+```
+
+```{r}
+#Normalize data using z-score (center, scale)
+normalizer <- preProcess(data.clustering,
+                         method = c("center", "scale"))
+data.normalized <- predict(normalizer, data.clustering)
+set.seed(12345)
+km.3 <- kmeans(data.normalized, 
+               centers=2)
+km.3
+head(km.3$cluster)
+data2$cluster <- as.factor(km.3$cluster)
+
+#i. "Customer.Age" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Customer.Age, y=Revenue, col=cluster))
+
+#ii. "Customer.Gender" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Customer.Gender, y=Revenue, col=cluster))
+
+#iii. "Country" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Country, y=Revenue, col=cluster))
+
+#iv. "Month" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Revenue, y=Month, col=cluster))
+
+#v. "Sub.Category" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Revenue, y=Sub.Category, col=cluster))
+
+#vi. "Cost" on the x axis, "Revenue" on the y axis
+#ggplot(data=data) +
+#  geom_point(mapping = aes(x=Cost, y=Revenue, col=cluster))
+
+#vi. "Product Category" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Product.Category, y=Revenue, col=cluster))
+```
+
+
+```{r}
+#Normalize data using z-score (center, scale)
+normalizer <- preProcess(data.clustering,
+                         method = c("center", "scale"))
+data.normalized <- predict(normalizer, data.clustering)
+data.normalized = data.normalized %>%
+  select(-c("Product.Category"))
+
+set.seed(12345)
+km.3 <- kmeans(data.normalized, 
+               centers=2)
+km.3
+head(km.3$cluster)
+data2$cluster <- as.factor(km.3$cluster)
+
+#i. "Customer.Age" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Customer.Age, y=Revenue, col=cluster,
+                           shape=Product.Category))
+
+#ii. "Customer.Gender" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Customer.Gender, y=Revenue, col=cluster,
+                           shape=Product.Category))
+
+#iii. "Country" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Country, y=Revenue, col=cluster,
+                           shape=Product.Category))
+
+#iv. "Month" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Revenue, y=Month, col=cluster,
+                           shape=Product.Category))
+
+#v. "Sub.Category" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Revenue, y=Sub.Category, col=cluster,
+                           shape=Product.Category))
+
+#vi. "Product.Category" on the x axis, "Revenue" on the y axis
+ggplot(data=data2) +
+  geom_point(mapping = aes(x=Product.Category, y=Revenue, col=cluster,
+                           shape=Product.Category))
+```
+
+```{r}
+table(data2$cluster, data2$Customer.Gender)
+ggplot(data=data) +
+  geom_point(mapping = aes(x=Cost, y=Revenue))
+```
+
+```{r}
+k.vals <- c(1,2,3,4,5,6,7,8,9,10)
+k.tot.withinss <- c()
+for (k.val in k.vals) {
+  km.k <- kmeans(data.normalized, k.val)
+  current.tot.withinss <- km.k$tot.withinss
+  k.tot.withinss <- c(k.tot.withinss, current.tot.withinss)
+}
+ggplot() +
+  geom_line(mapping = aes(x=k.vals, y=k.tot.withinss)) + 
+  xlab("k") + ylab("Total Sum of Squares within Clusters") +
+  scale_x_continuous(breaks=k.vals)
+```
+
+
+```{r}
+cor(data$Cost,data.clustering$Product.Category)
+cor(data.clustering$Product.Category,data.clustering$Revenue)
+cor(data$Cost,data$Revenue)
+cor(data.clustering$Country,data$Revenue)
+cor(data.clustering$Sub.Category,data$Revenue)
+cor(data.clustering$Customer.Age,data$Revenue)
+cor(data$Quantity,data$Revenue)
+```
+
+
+
+
